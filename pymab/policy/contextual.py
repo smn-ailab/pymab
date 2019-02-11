@@ -86,7 +86,7 @@ class LinUCB(ContextualPolicyInterface):
             result = np.argmax(self.theta_hat.T @ x + self.alpha * sigma_hat)
         return result
 
-    def update_params(self, x: np.matrix, action: int, reward: Union[int, float]) -> None:
+    def update_params(self, x: np.ndarray, action: int, reward: Union[int, float]) -> None:
         """Update parameters.
 
         Parameters
@@ -296,7 +296,7 @@ class LinTS(ContextualPolicyInterface):
 
         return result
 
-    def update_params(self, x: np.matrix, action: int, reward: Union[int, float]) -> None:
+    def update_params(self, x: np.ndarray, action: int, reward: Union[int, float]) -> None:
         """Update parameters.
 
         Parameters
@@ -396,7 +396,7 @@ class LogisticTS(ContextualPolicyInterface):
             result = np.argmax(x.T @ self.theta_tilde)
         return result
 
-    def update_params(self, x: np.matrix, action: int, reward: Union[int, float]) -> None:
+    def update_params(self, x: np.ndarray, action: int, reward: Union[int, float]) -> None:
         """Update parameters.
 
         Parameters
@@ -411,6 +411,7 @@ class LogisticTS(ContextualPolicyInterface):
             The observed reward value from the selected action.
 
         """
+        x = np.expand_dims(x, axis=1)
         self.action_counts[action] += 1
         self.data_stock[action].append(x)  # (user_dim + action_dim) * 1
         self.reward_stock[action].append(reward)
