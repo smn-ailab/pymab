@@ -76,8 +76,8 @@ class LinUCB(ContextualPolicyInterface):
             The selected action.
 
         """
-        if 0 in self.action_counts_temp:
-            result = np.argmin(self.action_counts_temp)
+        if 0 in self.action_counts:
+            result = np.argmin(self.action_counts)
         else:
             x = np.expand_dims(x, axis=1)
             self.theta_hat = np.concatenate([self.A_inv_temp[i] @ np.expand_dims(self.b_temp[:, i], axis=1)
@@ -177,8 +177,8 @@ class HybridLinUCB(ContextualPolicyInterface):
             The selected action.
 
         """
-        if 0 in self.action_counts_temp:
-            result = np.argmin(self.action_counts_temp)
+        if 0 in self.action_counts:
+            result = np.argmin(self.action_counts)
         else:
             z, x = np.expand_dims(x[:self.z_dim]), np.expand_dims(x[self.z_dim:])
             self.beta = np.linalg.inv(self.A0) @ self.b0  # k * 1
@@ -283,8 +283,8 @@ class LinTS(ContextualPolicyInterface):
             The selected action.
 
         """
-        if 0 in self.action_counts_temp:
-            result = np.argmin(self.action_counts_temp)
+        if 0 in self.action_counts:
+            result = np.argmin(self.action_counts)
         else:
             if self.data_size % self.sample_batch == 0:
                 x = np.expand_dims(x, axis=1)
@@ -386,8 +386,8 @@ class LogisticTS(ContextualPolicyInterface):
             The selected action.
 
         """
-        if 0 in self.action_counts_temp:
-            result = np.argmin(self.action_counts_temp)
+        if 0 in self.action_counts:
+            result = np.argmin(self.action_counts)
         else:
             if self.data_size % self.sample_batch == 0:
                 x = np.expand_dims(x, axis=1)

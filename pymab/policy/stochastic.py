@@ -160,17 +160,18 @@ class UCB(PolicyInterface):
     """
 
     _policy_type = "stochastic"
-    name = "UCB"
 
-    def __init__(self, n_actions: int, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, alpha: float=0.5, batch_size: int=1) -> None:
         """Initialize class."""
         self.n_actions = n_actions
+        self.alpha = alpha
         self.action_counts = np.zeros(self.n_actions, dtype=int)
         self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
         self.batch_size = batch_size
         self.data_size = 0
         self.estimated_rewards = np.zeros(self.n_actions)
         self.estimated_rewards_temp = np.zeros(self.n_actions)
+        name = f"UCB(alpha={self.alpha})"
 
     def select_action(self) -> int:
         """Select actions according to the policy for new data.
@@ -181,12 +182,12 @@ class UCB(PolicyInterface):
             The selected action.
 
         """
-        if 0 in self.action_counts_temp:
-            result = np.argmin(self.action_counts_temp)
+        if 0 in self.action_counts:
+            result = np.argmin(self.action_counts)
         else:
             ucb_values = np.zeros(self.n_actions)
-            variances = np.sqrt(2 * np.log(np.sum(self.action_counts_temp)) / self.action_counts_temp)
-            result = np.argmax(self.estimated_rewards_temp + variances)
+            bounds = np.sqrt(self.alpha * np.log(np.sum(self.action_counts_temp)) / self.action_counts_temp)
+            result = np.argmax(self.estimated_rewards_temp + bounds)
 
         return result
 
@@ -249,13 +250,13 @@ class UCBTuned(PolicyInterface):
             The selected action.
 
         """
-        if 0 in self.action_counts_temp:
+        if 0 in self.action_counts:
             result = np.argmin(self.action_counts_temp)
         else:
             ucb_values, total_counts = np.zeros(self.n_actions), np.sum(self.action_counts_temp)
-            variances1 = np.log(total_counts) / self.action_counts_temp
-            variances2 = np.minimum(1 / 4, self.sigma_temp + 2 * np.log(total_counts) / self.action_counts_temp)
-            result = np.argmax(self.estimated_rewards_temp + np.sqrt(variances1 * variances2))
+            bounds1 = np.log(total_counts) / self.action_counts_temp
+            bounds2 = np.minimum(1 / 4, self.sigma_temp + 2 * np.log(total_counts) / self.action_counts_temp)
+            result = np.argmax(self.estimated_rewards_temp + np.sqrt(bounds1 * bounds2))
 
         return result
 
@@ -285,29 +286,29 @@ class UCBTuned(PolicyInterface):
 
 
 class BernoulliTS(PolicyInterface):
-    """Thompson Sampling for Bernoulli Distribution."""
+    """Thompson Sampling for Bernoulli Distribution.
+
+    Parameters
+    ----------
+    n_actions: int
+        The number of given bandit actions.
+
+    alpha: float (default=1.0)
+        Hyperparameter alpha for beta distribution.
+
+    beta: float (default=1.0)
+        Hyperparameter beta for beta distribution.
+
+    batch_size: int, optional (default=1)
+        The number of data given in each batch.
+
+    """
 
     _policy_type = "stochastic"
     name = "BernoulliThompsonSampling"
 
     def __init__(self, n_actions: int, alpha: float=1.0, beta: float=1.0, batch_size: int=1) -> None:
-        """Initialize class.
-
-        Parameters
-        ----------
-        n_actions: int
-            The number of given bandit actions.
-
-        alpha: float (default=1.0)
-            Hyperparameter alpha for beta distribution.
-
-        beta: float (default=1.0)
-            Hyperparameter beta for beta distribution.
-
-        batch_size: int, optional (default=1)
-            The number of data given in each batch.
-
-        """
+        """Initialize class."""
         self.n_actions = n_actions
         self.action_counts = np.zeros(self.n_actions, dtype=int)
         self.alpha = alpha
