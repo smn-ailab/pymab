@@ -34,7 +34,7 @@ class LinUCB(ContextualPolicyInterface):
     alpha: float, optional(default=1.0)
         The hyper-parameter which represents how often the algorithm explores.
 
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     References
@@ -45,13 +45,13 @@ class LinUCB(ContextualPolicyInterface):
 
     """
 
-    def __init__(self, n_actions: int, n_features: int, alpha: float=1.0, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, n_features: int, alpha: float=1.0, observation_interval: int=1) -> None:
         """Initialize class."""
         self.n_actions = n_actions
         self.n_features = n_features
         self.action_counts = np.zeros(self.n_actions, dtype=int)
-        self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
-        self.observation_interval = batch_size
+        self.observed_action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observation_interval = observation_interval
         self.num_iter = 0
         self.alpha = alpha
         self.name = f"LinUCB(alpha={self.alpha})"
@@ -107,7 +107,7 @@ class LinUCB(ContextualPolicyInterface):
         self.A_inv[action] -= self.A_inv[action] @ x @ x.T @ self.A_inv[action] / (1 + x.T @ self.A_inv[action] @ x)  # d * d
         self.b[:, action] += np.ravel(x) * reward  # d * 1
         if self.num_iter % self.observation_interval == 0:
-            self.action_counts_temp = np.copy(self.action_counts)
+            self.observed_action_counts = np.copy(self.action_counts)
             self.A_inv_temp, self.b_temp = np.copy(self.A_inv), np.copy(self.b)  # d * d, d * 1
 
 
@@ -128,7 +128,7 @@ class HybridLinUCB(ContextualPolicyInterface):
     alpha: float, optional(default=1.0)
         The hyper-parameter which represents how often the algorithm explores.
 
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     References
@@ -139,14 +139,14 @@ class HybridLinUCB(ContextualPolicyInterface):
 
     """
 
-    def __init__(self, n_actions: int, z_dim: int, x_dim: int, alpha: float=1.0, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, z_dim: int, x_dim: int, alpha: float=1.0, observation_interval: int=1) -> None:
         """Initialize class."""
         self.n_actions = n_actions
         self.z_dim = z_dim  # k
         self.x_dim = x_dim  # d
         self.action_counts = np.zeros(self.n_actions, dtype=int)
-        self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
-        self.observation_interval = batch_size
+        self.observed_action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observation_interval = observation_interval
         self.num_iter = 0
         self.alpha = alpha
         self.name = f"HybridLinUCB(alpha={self.alpha})"
@@ -242,7 +242,7 @@ class LinTS(ContextualPolicyInterface):
     sample_batch: int, optional (default=1)
         How often the policy sample new parameters.
 
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     References
@@ -251,13 +251,13 @@ class LinTS(ContextualPolicyInterface):
 
     """
 
-    def __init__(self, n_actions: int, n_features: int, sigma: float=1.0, sample_batch: int=1, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, n_features: int, sigma: float=1.0, sample_batch: int=1, observation_interval: int=1) -> None:
         """Initialize class."""
         self.n_actions = n_actions
         self.n_features = n_features
         self.action_counts = np.zeros(self.n_actions, dtype=int)
-        self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
-        self.observation_interval = batch_size
+        self.observed_action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observation_interval = observation_interval
         self.num_iter = 0
         self.sigma = sigma
         self.sample_batch = sample_batch
@@ -317,7 +317,7 @@ class LinTS(ContextualPolicyInterface):
         self.A_inv[action] -= self.A_inv[action] @ x @ x.T @ self.A_inv[action] / (1 + x.T @ self.A_inv[action] @ x)  # d * d
         self.b[:, action] += np.ravel(x) * reward  # d * 1
         if self.num_iter % self.observation_interval == 0:
-            self.action_counts_temp = np.copy(self.action_counts)
+            self.observed_action_counts = np.copy(self.action_counts)
             self.A_inv_temp, self.b_temp = np.copy(self.A_inv), np.copy(self.b)  # d * d, d * 1
 
 
@@ -341,7 +341,7 @@ class LogisticTS(ContextualPolicyInterface):
     sample_batch: int, optional (default=1)
         How often the policy sample new parameters.
 
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     References
@@ -353,13 +353,13 @@ class LogisticTS(ContextualPolicyInterface):
     """
 
     def __init__(self, n_actions: int, n_features: int, sigma: float=0.1,
-                 n_iter: int=1, sample_batch: int=1,  batch_size: int=1) -> None:
+                 n_iter: int=1, sample_batch: int=1,  observation_interval: int=1) -> None:
         """Initialize Class."""
         self.n_actions = n_actions
         self.n_features = n_features
         self.action_counts = np.zeros(self.n_actions, dtype=int)
-        self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
-        self.observation_interval = batch_size
+        self.observed_action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observation_interval = observation_interval
         self.num_iter = 0
         self.sigma = sigma
         self.n_iter = n_iter

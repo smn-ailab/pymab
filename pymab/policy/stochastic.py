@@ -30,18 +30,18 @@ class EpsilonGreedy(PolicyInterface):
     epsilon: float
         Probability of taking a random action.
 
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     """
 
     _policy_type = "stochastic"
 
-    def __init__(self, n_actions: int, epsilon: float, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, epsilon: float, observation_interval: int=1) -> None:
         """Initialize class."""
         self.n_actions = n_actions
         self.action_counts = np.zeros(self.n_actions, dtype=int)
-        self.observation_interval = batch_size
+        self.observation_interval = observation_interval
         self.num_iter = 0
         self.epsilon = epsilon
         self.estimated_rewards = np.zeros(self.n_actions)
@@ -94,18 +94,18 @@ class SoftMax(PolicyInterface):
     tau: float
         Softmax hyper-parameter.
 
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     """
 
     _policy_type = "stochastic"
 
-    def __init__(self, n_actions: int, tau: float, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, tau: float, observation_interval: int=1) -> None:
         """Initialize class."""
         self.n_actions = n_actions
         self.action_counts = np.zeros(self.n_actions, dtype=int)
-        self.observation_interval = batch_size
+        self.observation_interval = observation_interval
         self.num_iter = 0
         self.tau = tau
         self.estimated_rewards = np.zeros(self.n_actions)
@@ -154,20 +154,20 @@ class UCB(PolicyInterface):
     n_actions: int
         The number of given bandit actions.
 
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     """
 
     _policy_type = "stochastic"
 
-    def __init__(self, n_actions: int, alpha: float=0.5, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, alpha: float=0.5, observation_interval: int=1) -> None:
         """Initialize class."""
         self.n_actions = n_actions
         self.alpha = alpha
         self.action_counts = np.zeros(self.n_actions, dtype=int)
-        self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
-        self.observation_interval = batch_size
+        self.observed_action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observation_interval = observation_interval
         self.num_iter = 0
         self.estimated_rewards = np.zeros(self.n_actions)
         self.observed_rewards = np.zeros(self.n_actions)
@@ -186,7 +186,7 @@ class UCB(PolicyInterface):
             result = np.argmin(self.action_counts)
         else:
             ucb_values = np.zeros(self.n_actions)
-            bounds = np.sqrt(self.alpha * np.log(np.sum(self.action_counts_temp)) / self.action_counts_temp)
+            bounds = np.sqrt(self.alpha * np.log(np.sum(self.observed_action_counts)) / self.observed_action_counts)
             result = np.argmax(self.observed_rewards + bounds)
 
         return result
@@ -209,7 +209,7 @@ class UCB(PolicyInterface):
         self.estimated_rewards[action] = (old_reward * (n - 1) / n) + (reward / n)
 
         if self.num_iter % self.observation_interval == 0:
-            self.action_counts_temp = np.copy(self.action_counts)
+            self.observed_action_counts = np.copy(self.action_counts)
             self.observed_rewards = np.copy(self.estimated_rewards)
 
 
@@ -221,7 +221,7 @@ class UCBTuned(PolicyInterface):
     n_actions: int
         The number of given bandit actions.
 
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     """
@@ -229,12 +229,12 @@ class UCBTuned(PolicyInterface):
     _policy_type = "stochastic"
     name = "UCBTuned"
 
-    def __init__(self, n_actions: int, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, observation_interval: int=1) -> None:
         """Initialize class."""
         self.n_actions = n_actions
         self.action_counts = np.zeros(self.n_actions, dtype=int)
-        self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
-        self.observation_interval = batch_size
+        self.observed_action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observation_interval = observation_interval
         self.num_iter = 0
         self.estimated_rewards = np.zeros(self.n_actions)
         self.observed_rewards = np.zeros(self.n_actions)
@@ -251,11 +251,11 @@ class UCBTuned(PolicyInterface):
 
         """
         if 0 in self.action_counts:
-            result = np.argmin(self.action_counts_temp)
+            result = np.argmin(self.observed_action_counts)
         else:
-            ucb_values, total_counts = np.zeros(self.n_actions), np.sum(self.action_counts_temp)
-            bounds1 = np.log(total_counts) / self.action_counts_temp
-            bounds2 = np.minimum(1 / 4, self.sigma_temp + 2 * np.log(total_counts) / self.action_counts_temp)
+            ucb_values, total_counts = np.zeros(self.n_actions), np.sum(self.observed_action_counts)
+            bounds1 = np.log(total_counts) / self.observed_action_counts
+            bounds2 = np.minimum(1 / 4, self.sigma_temp + 2 * np.log(total_counts) / self.observed_action_counts)
             result = np.argmax(self.observed_rewards + np.sqrt(bounds1 * bounds2))
 
         return result
@@ -280,7 +280,7 @@ class UCBTuned(PolicyInterface):
         self.sigma[action] = new_sigma
 
         if self.num_iter % self.observation_interval == 0:
-            self.action_counts_temp = np.copy(self.action_counts)
+            self.observed_action_counts = np.copy(self.action_counts)
             self.observed_rewards = np.copy(self.estimated_rewards)
             self.sigma_temp = np.copy(self.sigma)
 
@@ -299,7 +299,7 @@ class BernoulliTS(PolicyInterface):
     beta: float (default=1.0)
         Hyperparameter beta for beta distribution.
 
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     """
@@ -307,13 +307,13 @@ class BernoulliTS(PolicyInterface):
     _policy_type = "stochastic"
     name = "BernoulliThompsonSampling"
 
-    def __init__(self, n_actions: int, alpha: float=1.0, beta: float=1.0, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, alpha: float=1.0, beta: float=1.0, observation_interval: int=1) -> None:
         """Initialize class."""
         self.n_actions = n_actions
         self.action_counts = np.zeros(self.n_actions, dtype=int)
         self.alpha = alpha
         self.beta = beta
-        self.observation_interval = batch_size
+        self.observation_interval = observation_interval
         self.num_iter = 0
         self.reward_counts = np.zeros(self.n_actions)
 
@@ -366,7 +366,7 @@ class GaussianTS(PolicyInterface):
     lam_prior: float (defaut=1.0)
         The hyperparameter lamda for prior gaussian distribution.
 
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     """
@@ -374,11 +374,11 @@ class GaussianTS(PolicyInterface):
     _policy_type = "stochastic"
     name = "GaussianThompsonSampling"
 
-    def __init__(self, n_actions: int, mu_prior: float=0.0, lam_likelihood: float=1.0, lam_prior: float=1.0, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, mu_prior: float=0.0, lam_likelihood: float=1.0, lam_prior: float=1.0, observation_interval: int=1) -> None:
         """Initialize class."""
         self.n_actions = n_actions
         self.action_counts = np.zeros(self.n_actions, dtype=int)
-        self.observation_interval = batch_size
+        self.observation_interval = observation_interval
         self.num_iter = 0
         self.reward_sums = np.zeros(self.n_actions, dtype=float)
         self.mu = np.zeros(self.n_actions, dtype=float)
