@@ -51,8 +51,8 @@ class LinUCB(ContextualPolicyInterface):
         self.n_features = n_features
         self.action_counts = np.zeros(self.n_actions, dtype=int)
         self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
-        self.batch_size = batch_size
-        self.data_size = 0
+        self.observation_interval = batch_size
+        self.num_iter = 0
         self.alpha = alpha
         self.name = f"LinUCB(alpha={self.alpha})"
         self.theta_hat = np.zeros((self.n_features, self.n_actions))  # d * k
@@ -102,11 +102,11 @@ class LinUCB(ContextualPolicyInterface):
 
         """
         x = np.expand_dims(x, axis=1)
-        self.data_size += 1
+        self.num_iter += 1
         self.action_counts[action] += 1
         self.A_inv[action] -= self.A_inv[action] @ x @ x.T @ self.A_inv[action] / (1 + x.T @ self.A_inv[action] @ x)  # d * d
         self.b[:, action] += np.ravel(x) * reward  # d * 1
-        if self.data_size % self.batch_size == 0:
+        if self.num_iter % self.observation_interval == 0:
             self.action_counts_temp = np.copy(self.action_counts)
             self.A_inv_temp, self.b_temp = np.copy(self.A_inv), np.copy(self.b)  # d * d, d * 1
 
@@ -146,8 +146,8 @@ class HybridLinUCB(ContextualPolicyInterface):
         self.x_dim = x_dim  # d
         self.action_counts = np.zeros(self.n_actions, dtype=int)
         self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
-        self.batch_size = batch_size
-        self.data_size = 0
+        self.observation_interval = batch_size
+        self.num_iter = 0
         self.alpha = alpha
         self.name = f"HybridLinUCB(alpha={self.alpha})"
 
@@ -210,7 +210,7 @@ class HybridLinUCB(ContextualPolicyInterface):
 
         """
         z, x = np.expand_dims(x[:self.z_dim]), np.expand_dims(x[self.z_dim:])
-        self.data_size += 1
+        self.num_iter += 1
         self.action_counts[action] += 1
         self.A0 += self.B[action].T @ self.A_inv[action] @ self.B[action]
         self.b0 += self.B[action].T @ self.A_inv[action] @ self.b[action]
@@ -220,7 +220,7 @@ class HybridLinUCB(ContextualPolicyInterface):
         self.A0 += z @ z.T - self.B[action].T @ self.A_inv[action] @ self.B[action]
         self.b0 += z * reward - self.B[action].T @ self.A_inv[action] @ np.expand_dims(self.b[:, action], axis=1)
 
-        if self.data_size % self.batch_size == 0:
+        if self.num_iter % self.observation_interval == 0:
             self.A0_temp, self.b0_temp = np.copy(self.A0), np.copy(self.b0)
             self.A_inv_temp, self.B_temp, self.b_temp = np.copy(self.A_inv), np.copy(self.B), np.copy(self.b)
 
@@ -257,8 +257,8 @@ class LinTS(ContextualPolicyInterface):
         self.n_features = n_features
         self.action_counts = np.zeros(self.n_actions, dtype=int)
         self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
-        self.batch_size = batch_size
-        self.data_size = 0
+        self.observation_interval = batch_size
+        self.num_iter = 0
         self.sigma = sigma
         self.sample_batch = sample_batch
         self.name = f"LinTS(sigma={self.sigma})"
@@ -286,7 +286,7 @@ class LinTS(ContextualPolicyInterface):
         if 0 in self.action_counts:
             result = np.argmin(self.action_counts)
         else:
-            if self.data_size % self.sample_batch == 0:
+            if self.num_iter % self.sample_batch == 0:
                 x = np.expand_dims(x, axis=1)
                 self.theta_hat = np.concatenate([self.A_inv[i] @ np.expand_dims(self.b[:, i], axis=1)
                                                  for i in np.arange(self.n_actions)], axis=1)
@@ -312,11 +312,11 @@ class LinTS(ContextualPolicyInterface):
 
         """
         x = np.expand_dims(x, axis=1)
-        self.data_size += 1
+        self.num_iter += 1
         self.action_counts[action] += 1
         self.A_inv[action] -= self.A_inv[action] @ x @ x.T @ self.A_inv[action] / (1 + x.T @ self.A_inv[action] @ x)  # d * d
         self.b[:, action] += np.ravel(x) * reward  # d * 1
-        if self.data_size % self.batch_size == 0:
+        if self.num_iter % self.observation_interval == 0:
             self.action_counts_temp = np.copy(self.action_counts)
             self.A_inv_temp, self.b_temp = np.copy(self.A_inv), np.copy(self.b)  # d * d, d * 1
 
@@ -359,8 +359,8 @@ class LogisticTS(ContextualPolicyInterface):
         self.n_features = n_features
         self.action_counts = np.zeros(self.n_actions, dtype=int)
         self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
-        self.batch_size = batch_size
-        self.data_size = 0
+        self.observation_interval = batch_size
+        self.num_iter = 0
         self.sigma = sigma
         self.n_iter = n_iter
         self.sample_batch = sample_batch
@@ -389,7 +389,7 @@ class LogisticTS(ContextualPolicyInterface):
         if 0 in self.action_counts:
             result = np.argmin(self.action_counts)
         else:
-            if self.data_size % self.sample_batch == 0:
+            if self.num_iter % self.sample_batch == 0:
                 x = np.expand_dims(x, axis=1)
                 self.theta_tilde = np.concatenate([np.expand_dims(np.random.multivariate_normal(self.theta_hat[:, i], self.hessian_inv[i]), axis=1)
                                                    for i in np.arange(self.n_actions)], axis=1)
@@ -415,9 +415,9 @@ class LogisticTS(ContextualPolicyInterface):
         self.action_counts[action] += 1
         self.data_stock[action].append(x)  # (user_dim + action_dim) * 1
         self.reward_stock[action].append(reward)
-        self.data_size += 1
+        self.num_iter += 1
 
-        if self.data_size % self.batch_size == 0:
+        if self.num_iter % self.observation_interval == 0:
             for i in np.arange(self.n_iter):
                 self.theta_hat[:, action], self.hessian_inv[action] = \
                     self._update_theta_hat(action, self.theta_hat[:, action])

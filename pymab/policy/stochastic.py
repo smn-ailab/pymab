@@ -41,11 +41,11 @@ class EpsilonGreedy(PolicyInterface):
         """Initialize class."""
         self.n_actions = n_actions
         self.action_counts = np.zeros(self.n_actions, dtype=int)
-        self.batch_size = batch_size
-        self.data_size = 0
+        self.observation_interval = batch_size
+        self.num_iter = 0
         self.epsilon = epsilon
         self.estimated_rewards = np.zeros(self.n_actions)
-        self.estimated_rewards_temp = np.zeros(self.n_actions)
+        self.observed_rewards = np.zeros(self.n_actions)
         self.name = f"EpsilonGreedy(eps={self.epsilon})"
 
     def select_action(self) -> int:
@@ -59,7 +59,7 @@ class EpsilonGreedy(PolicyInterface):
         """
         result = np.random.randint(self.n_actions)
         if np.random.rand() > self.epsilon:
-            result = np.argmax(self.estimated_rewards_temp)
+            result = np.argmax(self.observed_rewards)
         return result
 
     def update_params(self, action: int, reward: Union[int, float]) -> None:
@@ -74,13 +74,13 @@ class EpsilonGreedy(PolicyInterface):
             The observed reward value.
 
         """
-        self.data_size += 1
+        self.num_iter += 1
         self.action_counts[action] += 1
         n, old_reward = self.action_counts[action], self.estimated_rewards[action]
         self.estimated_rewards[action] = (old_reward * (n - 1) / n) + (reward / n)
 
-        if self.data_size % self.batch_size == 0:
-            self.estimated_rewards_temp = np.copy(self.estimated_rewards)
+        if self.num_iter % self.observation_interval == 0:
+            self.observed_rewards = np.copy(self.estimated_rewards)
 
 
 class SoftMax(PolicyInterface):
@@ -105,11 +105,11 @@ class SoftMax(PolicyInterface):
         """Initialize class."""
         self.n_actions = n_actions
         self.action_counts = np.zeros(self.n_actions, dtype=int)
-        self.batch_size = batch_size
-        self.data_size = 0
+        self.observation_interval = batch_size
+        self.num_iter = 0
         self.tau = tau
         self.estimated_rewards = np.zeros(self.n_actions)
-        self.estimated_rewards_temp = np.zeros(self.n_actions)
+        self.observed_rewards = np.zeros(self.n_actions)
         self.name = f"SoftMax(tau={self.tau})"
 
     def select_action(self) -> int:
@@ -121,7 +121,7 @@ class SoftMax(PolicyInterface):
             The selected action.
 
         """
-        z = np.sum(np.exp(self.estimated_rewards_temp) / self.tau)
+        z = np.sum(np.exp(self.observed_rewards) / self.tau)
         probs = (np.exp(self.estimated_rewards) / self.tau) / z
         return np.random.choice(self.n_actions, p=probs)
 
@@ -137,13 +137,13 @@ class SoftMax(PolicyInterface):
             The observed reward value.
 
         """
-        self.data_size += 1
+        self.num_iter += 1
         self.action_counts[action] += 1
         n, old_reward = self.action_counts[action], self.estimated_rewards[action]
         self.estimated_rewards[action] = (old_reward * (n - 1) / n) + (reward / n)
 
-        if self.data_size % self.batch_size == 0:
-            self.estimated_rewards_temp = np.copy(self.estimated_rewards)
+        if self.num_iter % self.observation_interval == 0:
+            self.observed_rewards = np.copy(self.estimated_rewards)
 
 
 class UCB(PolicyInterface):
@@ -167,10 +167,10 @@ class UCB(PolicyInterface):
         self.alpha = alpha
         self.action_counts = np.zeros(self.n_actions, dtype=int)
         self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
-        self.batch_size = batch_size
-        self.data_size = 0
+        self.observation_interval = batch_size
+        self.num_iter = 0
         self.estimated_rewards = np.zeros(self.n_actions)
-        self.estimated_rewards_temp = np.zeros(self.n_actions)
+        self.observed_rewards = np.zeros(self.n_actions)
         name = f"UCB(alpha={self.alpha})"
 
     def select_action(self) -> int:
@@ -187,7 +187,7 @@ class UCB(PolicyInterface):
         else:
             ucb_values = np.zeros(self.n_actions)
             bounds = np.sqrt(self.alpha * np.log(np.sum(self.action_counts_temp)) / self.action_counts_temp)
-            result = np.argmax(self.estimated_rewards_temp + bounds)
+            result = np.argmax(self.observed_rewards + bounds)
 
         return result
 
@@ -203,14 +203,14 @@ class UCB(PolicyInterface):
             The observed reward value.
 
         """
-        self.data_size += 1
+        self.num_iter += 1
         self.action_counts[action] += 1
         n, old_reward = self.action_counts[action], self.estimated_rewards[action]
         self.estimated_rewards[action] = (old_reward * (n - 1) / n) + (reward / n)
 
-        if self.data_size % self.batch_size == 0:
+        if self.num_iter % self.observation_interval == 0:
             self.action_counts_temp = np.copy(self.action_counts)
-            self.estimated_rewards_temp = np.copy(self.estimated_rewards)
+            self.observed_rewards = np.copy(self.estimated_rewards)
 
 
 class UCBTuned(PolicyInterface):
@@ -234,10 +234,10 @@ class UCBTuned(PolicyInterface):
         self.n_actions = n_actions
         self.action_counts = np.zeros(self.n_actions, dtype=int)
         self.action_counts_temp = np.zeros(self.n_actions, dtype=int)
-        self.batch_size = batch_size
-        self.data_size = 0
+        self.observation_interval = batch_size
+        self.num_iter = 0
         self.estimated_rewards = np.zeros(self.n_actions)
-        self.estimated_rewards_temp = np.zeros(self.n_actions)
+        self.observed_rewards = np.zeros(self.n_actions)
         self.sigma = np.zeros(self.n_actions, dtype=float)
         self.sigma_temp = np.zeros(self.n_actions, dtype=float)
 
@@ -256,7 +256,7 @@ class UCBTuned(PolicyInterface):
             ucb_values, total_counts = np.zeros(self.n_actions), np.sum(self.action_counts_temp)
             bounds1 = np.log(total_counts) / self.action_counts_temp
             bounds2 = np.minimum(1 / 4, self.sigma_temp + 2 * np.log(total_counts) / self.action_counts_temp)
-            result = np.argmax(self.estimated_rewards_temp + np.sqrt(bounds1 * bounds2))
+            result = np.argmax(self.observed_rewards + np.sqrt(bounds1 * bounds2))
 
         return result
 
@@ -272,16 +272,16 @@ class UCBTuned(PolicyInterface):
             The observed reward value.
 
         """
-        self.data_size += 1
+        self.num_iter += 1
         self.action_counts[action] += 1
         n, old_reward = self.action_counts[action], self.estimated_rewards[action]
         self.estimated_rewards[action] = (old_reward * (n - 1) / n) + (reward / n)
         new_sigma = ((n * ((self.sigma[action] ** 2) + (self.estimated_rewards[action] ** 2)) + reward ** 2) / (n + 1)) - self.estimated_rewards[action] ** 2
         self.sigma[action] = new_sigma
 
-        if self.data_size % self.batch_size == 0:
+        if self.num_iter % self.observation_interval == 0:
             self.action_counts_temp = np.copy(self.action_counts)
-            self.estimated_rewards_temp = np.copy(self.estimated_rewards)
+            self.observed_rewards = np.copy(self.estimated_rewards)
             self.sigma_temp = np.copy(self.sigma)
 
 
@@ -313,8 +313,8 @@ class BernoulliTS(PolicyInterface):
         self.action_counts = np.zeros(self.n_actions, dtype=int)
         self.alpha = alpha
         self.beta = beta
-        self.batch_size = batch_size
-        self.data_size = 0
+        self.observation_interval = batch_size
+        self.num_iter = 0
         self.reward_counts = np.zeros(self.n_actions)
 
     def select_action(self) -> int:
@@ -343,8 +343,8 @@ class BernoulliTS(PolicyInterface):
             The observed reward value.
 
         """
-        self.data_size += 1
-        if self.data_size % self.batch_size == 0:
+        self.num_iter += 1
+        if self.num_iter % self.observation_interval == 0:
             self.action_counts[action] += 1
             self.reward_counts[action] += reward
 
@@ -378,8 +378,8 @@ class GaussianTS(PolicyInterface):
         """Initialize class."""
         self.n_actions = n_actions
         self.action_counts = np.zeros(self.n_actions, dtype=int)
-        self.batch_size = batch_size
-        self.data_size = 0
+        self.observation_interval = batch_size
+        self.num_iter = 0
         self.reward_sums = np.zeros(self.n_actions, dtype=float)
         self.mu = np.zeros(self.n_actions, dtype=float)
         self.lam = np.ones(self.n_actions, dtype=float) * lam_prior
@@ -412,9 +412,9 @@ class GaussianTS(PolicyInterface):
             The observed reward value.
 
         """
-        self.data_size += 1
+        self.num_iter += 1
         self.reward_sums[action] += reward
 
-        if self.data_size % self.batch_size == 0:
+        if self.num_iter % self.observation_interval == 0:
             self.lam = self.action_counts * self.lam_likelihood + self.lam_prior
             self.mu = (self.lam_likelihood * self.reward_sums + self.lam_prior * self.mu_prior) / self.lam
