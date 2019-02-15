@@ -122,8 +122,8 @@ class SoftMax(PolicyInterface):
             The selected action.
 
         """
-        z = np.sum(np.exp(self.observed_rewards) / self.tau)
-        probs = (np.exp(self.estimated_rewards) / self.tau) / z
+        e_x = np.exp((self.observed_rewards - np.max(self.observed_rewards)) / self.tau)
+        probs = e_x / np.sum(e_x)
         return np.random.choice(self.n_actions, p=probs)
 
     def update_params(self, action: int, reward: Union[int, float]) -> None:
