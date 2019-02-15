@@ -1,4 +1,12 @@
-"""This Module contains Stochastic Bandit Policies."""
+"""This Module contains Stochastic Bandit Policies.
+
+References
+-------
+[1] John Myles White. "Bandit Algorithms for Website Optimization", O'Reilly. Media, Inc. 2012
+
+[2] Tor Lattimore and Csaba Szepesvari, "Bandit Algorithms", 2019.
+
+"""
 from abc import ABC, abstractmethod
 from typing import Union
 
@@ -183,6 +191,7 @@ class UCB(PolicyInterface):
             The selected action.
 
         """
+        # select each action once.
         if 0 in self.action_counts:
             result = np.argmin(self.action_counts)
         else:
@@ -251,6 +260,7 @@ class UCBTuned(PolicyInterface):
             The selected action.
 
         """
+        # select each action once.
         if 0 in self.action_counts:
             result = np.argmin(self.observed_action_counts)
         else:
