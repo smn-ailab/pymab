@@ -163,6 +163,9 @@ class UCB(PolicyInterface):
     n_actions: int
         The number of given bandit actions.
 
+    alpha: float, optional(default=0.5)
+        The hyper-parameter representing how often the algorithm explores.
+
     observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
@@ -195,7 +198,6 @@ class UCB(PolicyInterface):
         if 0 in self.action_counts:
             result = np.argmin(self.action_counts)
         else:
-            ucb_values = np.zeros(self.n_actions)
             bounds = np.sqrt(self.alpha * np.log(np.sum(self.observed_action_counts)) / self.observed_action_counts)
             result = np.argmax(self.observed_rewards + bounds)
 
