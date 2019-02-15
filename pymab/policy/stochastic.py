@@ -57,9 +57,10 @@ class EpsilonGreedy(PolicyInterface):
             The selected action.
 
         """
-        result = np.random.randint(self.n_actions)
         if np.random.rand() > self.epsilon:
             result = np.argmax(self.observed_rewards)
+        else:
+            result = np.random.randint(self.n_actions)
         return result
 
     def update_params(self, action: int, reward: Union[int, float]) -> None:
