@@ -65,8 +65,8 @@ class LinUCB(ContextualPolicyInterface):
         self.A_inv = np.concatenate([np.identity(self.n_features)
                                      for i in np.arange(self.n_actions)]).reshape(self.n_actions, self.n_features, self.n_features)  # k * d * d
         self.b = np.zeros((self.n_features, self.n_actions))
-        self.A_inv_temp = np.copy(self.A_inv)
-        self.b_temp = np.copy(self.b)
+        self.A_inv_obs = np.copy(self.A_inv)
+        self.b_obs = np.copy(self.b)
 
     def select_action(self, x: np.ndarray) -> int:
         """Select action for new data.
@@ -88,10 +88,10 @@ class LinUCB(ContextualPolicyInterface):
         else:
             x = np.expand_dims(x, axis=1)
             # estimate the mean rewards of actions.
-            self.theta_hat = np.concatenate([self.A_inv_temp[i] @ np.expand_dims(self.b_temp[:, i], axis=1)
+            self.theta_hat = np.concatenate([self.A_inv_obs[i] @ np.expand_dims(self.b_obs[:, i], axis=1)
                                              for i in np.arange(self.n_actions)], axis=1)
             # estimate the variance of reward estimations.
-            sigma_hat = np.sqrt((x.T @ self.A_inv_temp @ x)).reshape((self.n_actions, 1))
+            sigma_hat = np.sqrt((x.T @ self.A_inv_obs @ x)).reshape((self.n_actions, 1))
             result = np.argmax(self.theta_hat.T @ x + self.alpha * sigma_hat)
         return result
 
@@ -118,7 +118,7 @@ class LinUCB(ContextualPolicyInterface):
         self.b[:, action] += np.ravel(x) * reward  # b_a <- b_a * r
         if self.num_iter % self.observation_interval == 0:
             self.observed_action_counts = np.copy(self.action_counts)
-            self.A_inv_temp, self.b_temp = np.copy(self.A_inv), np.copy(self.b)
+            self.A_inv_obs, self.b_obs = np.copy(self.A_inv), np.copy(self.b)
 
 
 class HybridLinUCB(ContextualPolicyInterface):
@@ -167,8 +167,8 @@ class HybridLinUCB(ContextualPolicyInterface):
                                      for i in np.arange(self.n_actions)]).reshape(self.n_actions, self.x_dim, self.x_dim)  # k * d * d
         self.B = np.zeros((self.n_actions, self.x_dim, self.z_dim))
         self.b = np.zeros((self.x_dim, self.n_actions))
-        self.A0_temp, self.b0_temp = np.copy(self.A0), np.copy(self.b0)
-        self.A_inv_temp, self.B_temp, self.b_temp = np.copy(self.A_inv), np.copy(self.B), np.copy(self.b)
+        self.A0_obs, self.b0_obs = np.copy(self.A0), np.copy(self.b0)
+        self.A_inv_obs, self.B_obs, self.b_obs = np.copy(self.A_inv), np.copy(self.B), np.copy(self.b)
 
     def select_action(self, x: np.ndarray) -> int:
         """Select actions according to the policy for new data.
@@ -234,8 +234,8 @@ class HybridLinUCB(ContextualPolicyInterface):
         self.b0 += z * reward - self.B[action].T @ self.A_inv[action] @ np.expand_dims(self.b[:, action], axis=1)
 
         if self.num_iter % self.observation_interval == 0:
-            self.A0_temp, self.b0_temp = np.copy(self.A0), np.copy(self.b0)
-            self.A_inv_temp, self.B_temp, self.b_temp = np.copy(self.A_inv), np.copy(self.B), np.copy(self.b)
+            self.A0_obs, self.b0_obs = np.copy(self.A0), np.copy(self.b0)
+            self.A_inv_obs, self.B_obs, self.b_obs = np.copy(self.A_inv), np.copy(self.B), np.copy(self.b)
 
 
 class LinTS(ContextualPolicyInterface):
@@ -279,8 +279,8 @@ class LinTS(ContextualPolicyInterface):
         self.A_inv = np.concatenate([np.identity(self.n_features)
                                      for i in np.arange(self.n_actions)]).reshape(self.n_actions, self.n_features, self.n_features)
         self.b = np.zeros((self.n_features, self.n_actions))
-        self.A_inv_temp = np.copy(self.A_inv)
-        self.b_temp = np.copy(self.b)
+        self.A_inv_obs = np.copy(self.A_inv)
+        self.b_obs = np.copy(self.b)
 
     def select_action(self, x: np.ndarray) -> int:
         """Select actions according to the policy for new data.
@@ -331,7 +331,7 @@ class LinTS(ContextualPolicyInterface):
         self.b[:, action] += np.ravel(x) * reward  # b_a <- b_a * r
         if self.num_iter % self.observation_interval == 0:
             self.observed_action_counts = np.copy(self.action_counts)
-            self.A_inv_temp, self.b_temp = np.copy(self.A_inv), np.copy(self.b)
+            self.A_inv_obs, self.b_obs = np.copy(self.A_inv), np.copy(self.b)
 
 
 class LogisticTS(ContextualPolicyInterface):
