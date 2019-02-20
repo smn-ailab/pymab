@@ -260,7 +260,8 @@ class LinTS(ContextualPolicyInterface):
 
     References
     -------
-    [1] 本多淳也, 中村篤祥. "バンディット問題の理論とアルゴリズム" 講談社 機械学習プロフェッショナルシリーズ, 2016.
+    [1] S. Agrawal, N. Goyal. "Thompson sampling for contextual bandits with linear payoffs."
+        In Proceedings of the 30th International Conference on International Conference on Machine Learning, 2013.
 
     """
 
@@ -359,9 +360,7 @@ class LogisticTS(ContextualPolicyInterface):
 
     References
     -------
-    [1] 本多淳也, 中村篤祥. "バンディット問題の理論とアルゴリズム" 講談社 機械学習プロフェッショナルシリーズ, 2016.
-
-    [2] O. Chapelle, L. Li. "An Empirical Evaluation of Thompson Sampling" In NIPS, pp. 2249–2257, 2011.
+    [1] O. Chapelle, L. Li. "An Empirical Evaluation of Thompson Sampling" In NIPS, pp. 2249–2257, 2011.
 
     """
 
