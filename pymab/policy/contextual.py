@@ -1,63 +1,75 @@
-"""This Module contains Contextual Bandit Policies."""
+"""This Module contains Contextual Bandit Policies.
+
+References
+-------
+[1] Tor Lattimore and Csaba Szepesvari, "Bandit Algorithms", 2019.
+
+"""
 import copy
-import math
-import random
+from abc import ABC, abstractmethod
 from typing import Optional, Tuple, Union
 
 import numpy as np
-from scipy.stats import norm
-
-from pymab.utils import _check_x_input
-
-from .base import BaseContextualPolicy
 
 
-class LinUCB(BaseContextualPolicy):
+class ContextualPolicyInterface(ABC):
+    """Abstract base class for all contextual policies in pymab."""
+
+    @abstractmethod
+    def select_action(self, x: np.array) -> int:
+        """Select action for new data."""
+        pass
+
+    @abstractmethod
+    def update_params(self, x: np.array, action: int, reward: Union[int, float]) -> None:
+        """Update parameters."""
+        pass
+
+
+class LinUCB(ContextualPolicyInterface):
     """Linear Upper Confidence Bound.
 
     Parameters
     ----------
-    n_arms: int
-        The number of given bandit arms.
+    n_actions: int
+        The number of given bandit actions.
 
     n_features: int
         The dimention of context vectors.
 
     alpha: float, optional(default=1.0)
-        The hyper-parameter which represents how often the algorithm explores.
+        The hyper-parameter representing how often the algorithm explores.
 
-    warmup: int, optional(default=1)
-        The minimum number of pull of earch arm.
-
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     References
     -------
-    [1] L. Li, W. Chu, J. Langford, and E. Schapire.
-        A contextual-bandit approach to personalized news article recommendation.
-        In Proceedings of the 19th International Conference on World Wide Web, pp. 661–670. ACM, 2010.
+    [1] L. Li, W. Chu, J. Langford, and E. Schapire. "A contextual-bandit approach to
+        personalized news article recommendation" In Proceedings of the 19th International
+        Conference on World Wide Web, pp. 661–670. ACM, 2010.
 
     """
 
-    def __init__(self, n_arms: int, n_features: int, alpha: float=1.0, warmup: int=1, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, n_features: int, alpha: float=1.0, observation_interval: int=1) -> None:
         """Initialize class."""
-        super().__init__(n_arms, n_features, warmup, batch_size)
-
+        self.n_actions = n_actions
+        self.n_features = n_features
+        self.action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observed_action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observation_interval = observation_interval
+        self.num_iter = 0
         self.alpha = alpha
-        self.name = f"LinUCB(α={self.alpha})"
-
-        self.theta_hat = np.zeros((self.n_features, self.n_arms))  # d * k
+        self.name = f"LinUCB(alpha={self.alpha})"
+        self.theta_hat = np.zeros((self.n_features, self.n_actions))
         self.A_inv = np.concatenate([np.identity(self.n_features)
-                                     for i in np.arange(self.n_arms)]).reshape(self.n_arms, self.n_features, self.n_features)  # k * d * d
-        self.b = np.zeros((self.n_features, self.n_arms))  # d * k
+                                     for i in np.arange(self.n_actions)]).reshape(self.n_actions, self.n_features, self.n_features)  # k * d * d
+        self.b = np.zeros((self.n_features, self.n_actions))
+        self.A_inv_obs = np.copy(self.A_inv)
+        self.b_obs = np.copy(self.b)
 
-        self._A_inv = np.concatenate([np.identity(self.n_features)
-                                      for i in np.arange(self.n_arms)]).reshape(self.n_arms, self.n_features, self.n_features)
-        self._b = np.zeros((self.n_features, self.n_arms))
-
-    def select_arm(self, x: np.ndarray) -> int:
-        """Select arms according to the policy for new data.
+    def select_action(self, x: np.ndarray) -> int:
+        """Select action for new data.
 
         Parameters
         ----------
@@ -67,105 +79,99 @@ class LinUCB(BaseContextualPolicy):
         Returns
         -------
         result: int
-            The selected arm.
+            The selected action.
 
         """
-        if True in (self.counts < self.warmup):
-            result = np.argmax(np.array(self.counts < self.warmup, dtype=int))
+        # select each action once.
+        if 0 in self.action_counts:
+            result = np.argmin(self.action_counts)
         else:
-            x = _check_x_input(x)
-            self.theta_hat = np.concatenate([self.A_inv[i] @ np.expand_dims(self.b[:, i], axis=1)
-                                             for i in np.arange(self.n_arms)], axis=1)  # user_dim * n_arms
-            sigma_hat = np.concatenate([np.sqrt(x.T @ self.A_inv[i] @ x) for i in np.arange(self.n_arms)], axis=1)  # 1 * n_arms
-            result = np.argmax(x.T @ self.theta_hat + self.alpha * sigma_hat)
+            x = np.expand_dims(x, axis=1)
+            # estimate the mean rewards of actions.
+            self.theta_hat = np.concatenate([self.A_inv_obs[i] @ np.expand_dims(self.b_obs[:, i], axis=1)
+                                             for i in np.arange(self.n_actions)], axis=1)
+            # estimate the variance of reward estimations.
+            sigma_hat = np.sqrt((x.T @ self.A_inv_obs @ x)).reshape((self.n_actions, 1))
+            result = np.argmax(self.theta_hat.T @ x + self.alpha * sigma_hat)
         return result
 
-    def update(self, x: np.matrix, chosen_arm: int, reward: Union[int, float]) -> None:
-        """Update the reward and parameter information about earch arm.
+    def update_params(self, x: np.ndarray, action: int, reward: Union[int, float]) -> None:
+        """Update parameters.
 
         Parameters
         ----------
         x : array-like, shape = (n_features, )
             A test sample.
 
-        chosen_arm: int
-            The chosen arm.
+        action: int
+            The selected action.
 
         reward: int, float
-            The observed reward value from the chosen arm.
+            The observed reward value from the selected action.
 
         """
-        x = _check_x_input(x)
-        self.data_size += 1
-        self.counts[chosen_arm] += 1
-        self.rewards += reward
-        self._A_inv[chosen_arm] -= \
-            self._A_inv[chosen_arm] @ x @ x.T @ self._A_inv[chosen_arm] / (1 + x.T @ self._A_inv[chosen_arm] @ x)  # d * d
-        self._b[:, chosen_arm] += np.ravel(x) * reward  # d * 1
-        if self.data_size % self.batch_size == 0:
-            self.A_inv, self.b = np.copy(self._A_inv), np.copy(self._b)  # d * d,  d * 1
+        x = np.expand_dims(x, axis=1)
+        self.num_iter += 1
+        self.action_counts[action] += 1
+        # A^{-1} <- A^{-1} - A^{-1} @ x @ x^T @ A^{-1} / (1 + x^T @ A^{-1} @ x) (Sherman–Morrison formula)
+        self.A_inv[action] -= self.A_inv[action] @ x @ x.T @ self.A_inv[action] / (1 + x.T @ self.A_inv[action] @ x)
+        self.b[:, action] += np.ravel(x) * reward  # b_a <- b_a * r
+        if self.num_iter % self.observation_interval == 0:
+            self.observed_action_counts = np.copy(self.action_counts)
+            self.A_inv_obs, self.b_obs = np.copy(self.A_inv), np.copy(self.b)
 
 
-class HybridLinUCB(BaseContextualPolicy):
+class HybridLinUCB(ContextualPolicyInterface):
     """Hybrid Linear Upper Confidence Bound.
 
     Parameters
     ----------
-    n_arms: int
-        The number of given bandit arms.
+    n_actions: int
+        The number of given bandit actions.
 
     z_dim: int,
-        The dimensions of context vectors which are common to all arms.
+        The dimensions of common context vectors.
 
     x_dim:, int
-        The dimentions of context vectors which are unique to earch arm.
+        The dimentions of unique context vectors.
 
     alpha: float, optional(default=1.0)
-        The hyper-parameter which represents how often the algorithm explores.
+        The hyper-parameter representing how often the algorithm explores.
 
-    warmup: int, optional(default=1)
-        The minimum number of pull of earch arm.
-
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     References
     -------
-    [1] L. Li, W. Chu, J. Langford, and E. Schapire.
-        A contextual-bandit approach to personalized news article recommendation.
-        In Proceedings of the 19th International Conference on World Wide Web, pp. 661–670. ACM, 2010.
+    [1] L. Li, W. Chu, J. Langford, and E. Schapire. "A contextual-bandit approach to
+        personalized news article recommendation" In Proceedings of the 19th International
+        Conference on World Wide Web, pp. 661–670. ACM, 2010.
 
     """
 
-    def __init__(self, n_arms: int, z_dim: int, x_dim: int, alpha: float=1.0, warmup: int=1, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, z_dim: int, x_dim: int, alpha: float=1.0, observation_interval: int=1) -> None:
         """Initialize class."""
-        super().__init__(n_arms, z_dim + x_dim, warmup, batch_size)
-
-        self.z_dim = z_dim  # k
-        self.x_dim = x_dim  # d
+        self.n_actions = n_actions
+        self.z_dim = z_dim
+        self.x_dim = x_dim
+        self.action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observed_action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observation_interval = observation_interval
+        self.num_iter = 0
         self.alpha = alpha
-        self.name = f"HybridLinUCB(α={self.alpha})"
-
+        self.name = f"HybridLinUCB(alpha={self.alpha})"
         self.beta = np.zeros(self.z_dim)
-        self.theta_hat = np.zeros((self.x_dim, self.n_arms))  # d * k
-
-        # matrices which are common to all context
-        self.A_zero, self.b_zero = np.identity(self.z_dim), np.zeros((self.z_dim, 1))  # k * k, k * 1
+        self.theta_hat = np.zeros((self.x_dim, self.n_actions))
+        self.A0, self.b0 = np.identity(self.z_dim), np.zeros((self.z_dim, 1))
         self.A_inv = np.concatenate([np.identity(self.x_dim)
-                                     for i in np.arange(self.n_arms)]).reshape(self.n_arms, self.x_dim, self.x_dim)  # k * d * d
-        self.B = np.concatenate([np.zeros((self.x_dim, self.z_dim))
-                                 for i in np.arange(self.n_arms)]).reshape(self.n_arms, self.x_dim, self.z_dim)
-        self.b = np.zeros((self.x_dim, self.n_arms))
+                                     for i in np.arange(self.n_actions)]).reshape(self.n_actions, self.x_dim, self.x_dim)  # k * d * d
+        self.B = np.zeros((self.n_actions, self.x_dim, self.z_dim))
+        self.b = np.zeros((self.x_dim, self.n_actions))
+        self.A0_obs, self.b0_obs = np.copy(self.A0), np.copy(self.b0)
+        self.A_inv_obs, self.B_obs, self.b_obs = np.copy(self.A_inv), np.copy(self.B), np.copy(self.b)
 
-        self._A_zero, self._b_zero = np.identity(self.z_dim), np.zeros((self.z_dim, 1))
-        self._A_inv = np.concatenate([np.identity(self.x_dim)
-                                      for i in np.arange(self.n_arms)]).reshape(self.n_arms, self.x_dim, self.x_dim)  # k * d * d
-        self._B = np.concatenate([np.zeros((self.x_dim, self.z_dim))
-                                  for i in np.arange(self.n_arms)]).reshape(self.n_arms, self.x_dim, self.z_dim)
-        self._b = np.zeros((self.x_dim, self.n_arms))
-
-    def select_arm(self, x: np.ndarray) -> int:
-        """Select arms according to the policy for new data.
+    def select_action(self, x: np.ndarray) -> int:
+        """Select actions according to the policy for new data.
 
         Parameters
         ----------
@@ -175,66 +181,70 @@ class HybridLinUCB(BaseContextualPolicy):
         Returns
         -------
         result: int
-            The selected arm.
+            The selected action.
 
         """
-        if True in (self.counts < self.warmup):
-            result = np.argmax(np.array(self.counts < self.warmup, dtype=int))
+        # select each action once.
+        if 0 in self.action_counts:
+            result = np.argmin(self.action_counts)
         else:
-            z, x = _check_x_input(x[:self.z_dim]), _check_x_input(x[self.z_dim:])
-            self.beta = np.linalg.inv(self.A_zero) @ self.b_zero  # k * 1
+            z, x = np.expand_dims(x[:self.z_dim]), np.expand_dims(x[self.z_dim:])
+            self.beta = np.linalg.inv(self.A0) @ self.b0
+            # estimate the mean rewards of actions.
             self.theta_hat = np.concatenate([(self.A_inv[i] @ (np.expand_dims(self.b[:, i], axis=1) - self.B[i] @ self.beta))
-                                             for i in np.arange(self.n_arms)], axis=1)
-            s1 = z.T @ np.linalg.inv(self.A_zero) @ z
-            s2 = - 2 * np.concatenate([z.T @ np.linalg.inv(self.A_zero) @ self.B[i].T @ self.A_inv[i] @ x
-                                       for i in np.arange(self.n_arms)], axis=1)
-            s3 = np.concatenate([x.T @ self.A_inv[i] @ x for i in np.arange(self.n_arms)], axis=1)
-            s4 = np.concatenate([x.T @ self.A_inv[i] @ self.B[i] @ np.linalg.inv(self.A_zero) @ self.B[i].T @ self.A_inv[i] @ x
-                                 for i in np.arange(self.n_arms)], axis=1)
-            sigma_hat = s1 + s2 + s3 + s4
+                                             for i in np.arange(self.n_actions)], axis=1)
+            # estimate the variance of reward estimations.
+            sigma1 = z.T @ np.linalg.inv(self.A0) @ z
+            sigma2 = - 2 * np.concatenate([z.T @ np.linalg.inv(self.A0) @ self.B[i].T @ self.A_inv[i] @ x
+                                           for i in np.arange(self.n_actions)], axis=1)
+            sigma3 = np.concatenate([x.T @ self.A_inv[i] @ x for i in np.arange(self.n_actions)], axis=1)
+            sigma4 = np.concatenate([x.T @ self.A_inv[i] @ self.B[i] @ np.linalg.inv(self.A0) @ self.B[i].T @ self.A_inv[i] @ x
+                                     for i in np.arange(self.n_actions)], axis=1)
+            sigma_hat = sigma1 + sigma2 + sigma3 + sigma4
             result = np.argmax(z.T @ self.beta + x.T @ self.theta_hat + self.alpha * sigma_hat)
         return result
 
-    def update(self, x: np.ndarray, chosen_arm: int, reward: float) -> None:
-        """Update the reward and parameter information about earch arm.
+    def update_params(self, x: np.ndarray, action: int, reward: float) -> None:
+        """Update parameters.
 
         Parameters
         ----------
         x : array-like, shape = (n_features, )
             A test sample.
 
-        chosen_arm: int
-            The chosen arm.
+        action: int
+            The selected action.
 
         reward: int, float
-            The observed reward value from the chosen arm.
+            The observed reward value from the selected action.
 
         """
-        z, x = _check_x_input(x[:self.z_dim]), _check_x_input(x[self.z_dim:])
+        z, x = np.expand_dims(x[:self.z_dim], axis=1), np.expand_dims(x[self.z_dim:], axis=1)
+        self.num_iter += 1
+        self.action_counts[action] += 1
+        self.A0 += self.B[action].T @ self.A_inv[action] @ self.B[action]  # A0 <- A0 + B^T @ A^{-1} @ B
+        self.b0 += self.B[action].T @ self.A_inv[action] @ self.b[action]  # b0 <- b0 + B^T @ A^{-1} @ b
+        # A^{-1} <- A^{-1} - A^{-1} @ x @ x^T @ A^{-1} / (1 + x^T @ A^{-1} @ x) (Sherman–Morrison formula)
+        self.A_inv[action] -= self.A_inv[action] @ x @ x.T @ self.A_inv[action] / (1 + x.T @ self.A_inv[action] @ x)
+        self.B[action] += x @ z.T  # B_a <- B_a x @ z^T
+        self.b[:, action] += np.ravel(x) * reward  # b_a <- x * r
+        # A0 <- A0 + z @ z^T - B^T @ A_a^{-1} @ B_a
+        self.A0 += z @ z.T - self.B[action].T @ self.A_inv[action] @ self.B[action]
+        # b0 <- b0 + z * r - B_a^T @ A_a^{-1} @ b_a
+        self.b0 += z * reward - self.B[action].T @ self.A_inv[action] @ np.expand_dims(self.b[:, action], axis=1)
 
-        self.data_size += 1
-        self.counts[chosen_arm] += 1
-        self.rewards += reward
-        self._A_zero += self._B[chosen_arm].T @ self._A_inv[chosen_arm] @ self._B[chosen_arm]
-        self._b_zero += self._B[chosen_arm].T @ self._A_inv[chosen_arm] @ self._b[chosen_arm]
-        self._A_inv[chosen_arm] -= self._A_inv[chosen_arm] @ x @ x.T @ self._A_inv[chosen_arm] / (1 + x.T @ self._A_inv[chosen_arm] @ x)
-        self._B[chosen_arm] += x @ z.T
-        self._b[:, chosen_arm] += np.ravel(x) * reward
-        self._A_zero += z @ z.T - self._B[chosen_arm].T @ self._A_inv[chosen_arm] @ self._B[chosen_arm]
-        self._b_zero += z * reward - self._B[chosen_arm].T @ self._A_inv[chosen_arm] @ np.expand_dims(self._b[:, chosen_arm], axis=1)
-
-        if self.data_size % self.batch_size == 0:
-            self.A_zero, self.b_zero = np.copy(self._A_zero), np.copy(self._b_zero)
-            self.A_inv, self.B, self.b = np.copy(self._A_inv), np.copy(self._B), np.copy(self._b)
+        if self.num_iter % self.observation_interval == 0:
+            self.A0_obs, self.b0_obs = np.copy(self.A0), np.copy(self.b0)
+            self.A_inv_obs, self.B_obs, self.b_obs = np.copy(self.A_inv), np.copy(self.B), np.copy(self.b)
 
 
-class LinTS(BaseContextualPolicy):
+class LinTS(ContextualPolicyInterface):
     """Linear Thompson Sampling.
 
     Parameters
     ----------
-    n_arms: int
-        The number of given bandit arms.
+    n_actions: int
+        The number of given bandit actions.
 
     n_features: int
         The dimention of context vectors.
@@ -242,41 +252,39 @@ class LinTS(BaseContextualPolicy):
     sigma: float, optional(default=1.0)
         The variance of prior gaussian distribution.
 
-    warmup: int, optional(default=1)
-        The minimum number of pull of earch arm.
-
     sample_batch: int, optional (default=1)
         How often the policy sample new parameters.
 
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     References
     -------
-    [1] 本多淳也, 中村篤祥. バンディット問題の理論とアルゴリズム. 講談社 機械学習プロフェッショナルシリーズ. 2016.
+    [1] S. Agrawal, N. Goyal. "Thompson sampling for contextual bandits with linear payoffs."
+        In Proceedings of the 30th International Conference on International Conference on Machine Learning, 2013.
 
     """
 
-    def __init__(self, n_arms: int, n_features: int, sigma: float=1.0,
-                 warmup: int=1, sample_batch: int=1, batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, n_features: int, sigma: float=1.0, sample_batch: int=1, observation_interval: int=1) -> None:
         """Initialize class."""
-        super().__init__(n_arms, n_features, warmup, batch_size)
-
+        self.n_actions = n_actions
+        self.n_features = n_features
+        self.action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observed_action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observation_interval = observation_interval
+        self.num_iter = 0
         self.sigma = sigma
         self.sample_batch = sample_batch
-        self.name = f"LinTS(σ={self.sigma})"
-
-        self.theta_hat, self.theta_tilde = np.zeros((self.n_features, self.n_arms)), np.zeros((self.n_features, self.n_arms))
+        self.name = f"LinTS(sigma={self.sigma})"
+        self.theta_hat, self.theta_tilde = np.zeros((self.n_features, self.n_actions)), np.zeros((self.n_features, self.n_actions))
         self.A_inv = np.concatenate([np.identity(self.n_features)
-                                     for i in np.arange(self.n_arms)]).reshape(self.n_arms, self.n_features, self.n_features)  # k * d * d
-        self.b = np.zeros((self.n_features, self.n_arms))  # d * k
+                                     for i in np.arange(self.n_actions)]).reshape(self.n_actions, self.n_features, self.n_features)
+        self.b = np.zeros((self.n_features, self.n_actions))
+        self.A_inv_obs = np.copy(self.A_inv)
+        self.b_obs = np.copy(self.b)
 
-        self._A_inv = np.concatenate([np.identity(self.n_features)
-                                      for i in np.arange(self.n_arms)]).reshape(self.n_arms, self.n_features, self.n_features)
-        self._b = np.zeros((self.n_features, self.n_arms))
-
-    def select_arm(self, x: np.matrix) -> int:
-        """Select arms according to the policy for new data.
+    def select_action(self, x: np.ndarray) -> int:
+        """Select actions according to the policy for new data.
 
         Parameters
         ----------
@@ -286,55 +294,54 @@ class LinTS(BaseContextualPolicy):
         Returns
         -------
         result: int
-            The selected arm.
+            The selected action.
 
         """
-        if True in (self.counts < self.warmup):
-            result = np.argmax(np.array(self.counts < self.warmup, dtype=int))
-        else:
-            x = _check_x_input(x)
-            if self.data_size % self.sample_batch == 0:
-                self.theta_hat = np.concatenate([self.A_inv[i] @ np.expand_dims(self.b[:, i], axis=1)
-                                                 for i in np.arange(self.n_arms)], axis=1)
-                self.theta_tilde = np.concatenate([np.expand_dims(np.random.multivariate_normal(self.theta_hat[:, i], self.A_inv[i]), axis=1)
-                                                   for i in np.arange(self.n_arms)], axis=1)
-            result = np.argmax(x.T @ self.theta_tilde)
+        if self.num_iter % self.sample_batch == 0:
+            x = np.expand_dims(x, axis=1)
+            # estimate the expectation of each action's parameters.
+            self.theta_hat = np.concatenate([self.A_inv[i] @ np.expand_dims(self.b[:, i], axis=1)
+                                             for i in np.arange(self.n_actions)], axis=1)
+            # sample parameters from multinomial normal distributions.
+            self.theta_tilde = np.concatenate([np.expand_dims(np.random.multivariate_normal(self.theta_hat[:, i], self.A_inv[i]), axis=1)
+                                               for i in np.arange(self.n_actions)], axis=1)
+        result = np.argmax(x.T @ self.theta_tilde)
 
         return result
 
-    def update(self, x: np.matrix, chosen_arm: int, reward: float) -> None:
-        """Update the reward and parameter information about earch arm.
+    def update_params(self, x: np.ndarray, action: int, reward: Union[int, float]) -> None:
+        """Update parameters.
 
         Parameters
         ----------
         x : array-like, shape = (n_features, )
             A test sample.
 
-        chosen_arm: int
-            The chosen arm.
+        action: int
+            The selected action.
 
         reward: int, float
-            The observed reward value from the chosen arm.
+            The observed reward value from the selected action.
 
         """
-        x = _check_x_input(x)
-        self.data_size += 1
-        self.counts[chosen_arm] += 1
-        self.rewards += reward
-        self._A_inv[chosen_arm] -= \
-            self._A_inv[chosen_arm] @ x @ x.T @ self._A_inv[chosen_arm] / (1 + x.T @ self._A_inv[chosen_arm] @ x)  # d * d
-        self._b[:, chosen_arm] += np.ravel(x) * reward  # d * 1
-        if self.data_size % self.batch_size == 0:
-            self.A_inv, self.b = np.copy(self._A_inv), np.copy(self._b)  # d * d,  d * 1
+        x = np.expand_dims(x, axis=1)
+        self.num_iter += 1
+        self.action_counts[action] += 1
+        # A^{-1} <- A^{-1} - A^{-1} @ x @ x^T @ A^{-1} / (1 + x^T @ A^{-1} @ x) (Sherman–Morrison formula)
+        self.A_inv[action] -= self.A_inv[action] @ x @ x.T @ self.A_inv[action] / (1 + x.T @ self.A_inv[action] @ x)
+        self.b[:, action] += np.ravel(x) * reward  # b_a <- b_a * r
+        if self.num_iter % self.observation_interval == 0:
+            self.observed_action_counts = np.copy(self.action_counts)
+            self.A_inv_obs, self.b_obs = np.copy(self.A_inv), np.copy(self.b)
 
 
-class LogisticTS(BaseContextualPolicy):
+class LogisticTS(ContextualPolicyInterface):
     """Logistic Thompson Sampling.
 
     Parameters
     ----------
-    n_arms: int
-        The number of given bandit arms.
+    n_actions: int
+        The number of given bandit actions.
 
     n_features: int
         The dimention of context vectors.
@@ -348,40 +355,36 @@ class LogisticTS(BaseContextualPolicy):
     sample_batch: int, optional (default=1)
         How often the policy sample new parameters.
 
-    warmup: int, optional(default=1)
-        The minimum number of pull of earch arm.
-
-    batch_size: int, optional (default=1)
+    observation_interval: int, optional (default=1)
         The number of data given in each batch.
 
     References
     -------
-    [1] 本多淳也, 中村篤祥. バンディット問題の理論とアルゴリズム. 講談社 機械学習プロフェッショナルシリーズ, 2016.
-
-    [2] O. Chapelle, L. Li. An Empirical Evaluation of Thompson Sampling. In NIPS, pp. 2249–2257, 2011.
+    [1] O. Chapelle, L. Li. "An Empirical Evaluation of Thompson Sampling" In NIPS, pp. 2249–2257, 2011.
 
     """
 
-    def __init__(self, n_arms: int, n_features: int, sigma: float=0.1,
-                 n_iter: int=1, warmup: int=1, sample_batch: int=1,  batch_size: int=1) -> None:
+    def __init__(self, n_actions: int, n_features: int, sigma: float=0.1,
+                 n_iter: int=1, sample_batch: int=1,  observation_interval: int=1) -> None:
         """Initialize Class."""
-        super().__init__(n_arms, n_features, warmup, batch_size)
-
+        self.n_actions = n_actions
+        self.n_features = n_features
+        self.action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observed_action_counts = np.zeros(self.n_actions, dtype=int)
+        self.observation_interval = observation_interval
+        self.num_iter = 0
         self.sigma = sigma
         self.n_iter = n_iter
         self.sample_batch = sample_batch
-        self.name = f"LogisticTS(σ={self.sigma})"
-
-        self.data_stock: list = [[] for i in np.arange(self.n_arms)]
-        self.reward_stock: list = [[] for i in np.arange(self.n_arms)]
-
-        # array - (n_arms * user_dim),
-        self.theta_hat, self.theta_tilde = np.zeros((self.n_features, self.n_arms)), np.zeros((self.n_features, self.n_arms))
+        self.name = f"LogisticTS(sigma={self.sigma})"
+        self.data_stock: list = [[] for i in np.arange(self.n_actions)]
+        self.reward_stock: list = [[] for i in np.arange(self.n_actions)]
+        self.theta_hat, self.theta_tilde = np.zeros((self.n_features, self.n_actions)), np.zeros((self.n_features, self.n_actions))
         self.hessian_inv = np.concatenate([np.identity(self.n_features)
-                                           for i in np.arange(self.n_arms)]).reshape(self.n_arms, self.n_features, self.n_features)
+                                           for i in np.arange(self.n_actions)]).reshape(self.n_actions, self.n_features, self.n_features)
 
-    def select_arm(self, x: np.ndarray) -> int:
-        """Select arms according to the policy for new data.
+    def select_action(self, x: np.ndarray) -> int:
+        """Select actions according to the policy for new data.
 
         Parameters
         ----------
@@ -391,173 +394,71 @@ class LogisticTS(BaseContextualPolicy):
         Returns
         -------
         result: int
-            The selected arm.
+            The selected action.
 
         """
-        if True in (self.counts < self.warmup):
-            result = np.argmax(np.array(self.counts < self.warmup, dtype=int))
-        else:
-            x = _check_x_input(x)
-            if self.data_size % self.sample_batch == 0:
-                self.theta_tilde = np.concatenate([np.expand_dims(np.random.multivariate_normal(self.theta_hat[:, i], self.hessian_inv[i]), axis=1)
-                                                   for i in np.arange(self.n_arms)], axis=1)
-            result = np.argmax(x.T @ self.theta_tilde)
+        if self.num_iter % self.sample_batch == 0:
+            x = np.expand_dims(x, axis=1)
+            # sample parameters from multinomial normal distributions.
+            self.theta_tilde = np.concatenate([np.expand_dims(np.random.multivariate_normal(self.theta_hat[:, i], self.hessian_inv[i]), axis=1)
+                                               for i in np.arange(self.n_actions)], axis=1)
+        result = np.argmax(x.T @ self.theta_tilde)
         return result
 
-    def update(self, x: np.ndarray, chosen_arm: int, reward: float) -> None:
-        """Update the reward and parameter information about earch arm.
+    def update_params(self, x: np.ndarray, action: int, reward: Union[int, float]) -> None:
+        """Update parameters.
 
         Parameters
         ----------
         x : array-like, shape = (n_features, )
             A test sample.
 
-        chosen_arm: int
-            The chosen arm.
+        action: int
+            The selected action.
 
         reward: int, float
-            The observed reward value from the chosen arm.
+            The observed reward value from the selected action.
 
         """
-        x = _check_x_input(x)
-        self.counts[chosen_arm] += 1
-        self.rewards += reward
-        self.data_stock[chosen_arm].append(x)  # (user_dim + arm_dim) * 1
-        self.reward_stock[chosen_arm].append(reward)
-        self.data_size += 1
+        x = np.expand_dims(x, axis=1)
+        self.action_counts[action] += 1
+        self.data_stock[action].append(x)
+        self.reward_stock[action].append(reward)
+        self.num_iter += 1
 
-        if self.data_size % self.batch_size == 0:
+        if self.num_iter % self.observation_interval == 0:
+            # update parameters using the newton method.
             for i in np.arange(self.n_iter):
-                self.theta_hat[:, chosen_arm], self.hessian_inv[chosen_arm] = \
-                    self._update_theta_hat(chosen_arm, self.theta_hat[:, chosen_arm])
+                self.theta_hat[:, action], self.hessian_inv[action] = \
+                    self._update_theta_hat(action, self.theta_hat[:, action])
 
-    def _calc_gradient(self, chosen_arm: int, theta_hat: np.ndarray) -> np.ndarray:
+    def _calc_gradient(self, action: int, theta_hat: np.ndarray) -> np.ndarray:
+        """Calculate the gradients of parameters."""
         _hat = np.expand_dims(theta_hat, axis=1)
         _gradient = _hat / self.sigma
-        _data = np.concatenate(self.data_stock[chosen_arm], axis=1)  # arm_dim * n_user
+        _data = np.concatenate(self.data_stock[action], axis=1)
         _gradient += np.expand_dims(np.sum(_data * (np.exp(_hat.T @ _data) / (1 + np.exp(_hat.T @ _data))), axis=1), axis=1)
-        _gradient -= np.expand_dims(np.sum(_data[:, np.array(self.reward_stock[chosen_arm]) == 1], axis=1), axis=1)
+        _gradient -= np.expand_dims(np.sum(_data[:, np.array(self.reward_stock[action]) == 1], axis=1), axis=1)
         return _gradient
 
-    def _calc_hessian(self, chosen_arm: int, theta_hat: np.ndarray) -> np.ndarray:
+    def _calc_hessian(self, action: int, theta_hat: np.ndarray) -> np.ndarray:
+        """Calculate the hessians of parameters."""
         _hat = np.expand_dims(theta_hat, axis=1)
         _hessian = np.identity(self.n_features) / self.sigma
-        _data = np.concatenate(self.data_stock[chosen_arm], axis=1)
+        _data = np.concatenate(self.data_stock[action], axis=1)
         mat = [np.expand_dims(_data[:, i], axis=1) @ np.expand_dims(_data[:, i], axis=1).T
-               for i in np.arange(self.counts[chosen_arm])]
-        weight = np.ravel(np.exp(_hat.T @ _data) / (1 + np.exp(_hat.T @ _data)) ** 2)  # 1 * data_size
+               for i in np.arange(self.action_counts[action])]
+        weight = np.ravel(np.exp(_hat.T @ _data) / (1 + np.exp(_hat.T @ _data)) ** 2)
         _hessian += np.sum(
-            np.concatenate([_mat * w for _mat, w in zip(mat, weight)], axis=0).reshape(self.counts[chosen_arm],
+            np.concatenate([_mat * w for _mat, w in zip(mat, weight)], axis=0).reshape(self.action_counts[action],
                                                                                        self.n_features,
-                                                                                       self.n_features),
-            axis=0)
-
+                                                                                       self.n_features), axis=0)
         return _hessian
 
-    def _update_theta_hat(self, chosen_arm: int, theta_hat: np.ndarray) -> np.ndarray:
-        _theta_hat = np.expand_dims(theta_hat, axis=1)  # (user_dim * arm_dim) * 1
-        _gradient = self._calc_gradient(chosen_arm, theta_hat)
-        _hessian_inv = np.linalg.inv(self._calc_hessian(chosen_arm, theta_hat))
-        _theta_hat -= _hessian_inv @ _gradient
+    def _update_theta_hat(self, action: int, theta_hat: np.ndarray) -> np.ndarray:
+        """Update parameters using the newtom method."""
+        _theta_hat = np.expand_dims(theta_hat, axis=1)
+        _gradient = self._calc_gradient(action, theta_hat)
+        _hessian_inv = np.linalg.inv(self._calc_hessian(action, theta_hat))
+        _theta_hat -= _hessian_inv @ _gradient  # \theta_a <- \theta_a - H(\theta_a)^{-1} @ G(\theta)
         return np.ravel(_theta_hat), _hessian_inv
-
-
-class ACTS(BaseContextualPolicy):
-    """Action Centered Thompson Sampling Algorithm for Contextual Multi-Armed Bandit Problem.
-
-    References
-    -------
-    [1] K. Greenewald, Ambuj Tewari, S. Murphy, and P. Klasnja. Action centered contextual bandits. In NIPS, 2017.
-
-    """
-
-    def __init__(self, n_arms: int, n_features: int, v: float = 1.0,
-                 pi_min: float = 0.1, pi_max: float = 0.9, warmup: int = 10,
-                 batch_size: int = 100, sample_batch_size: int = 20) -> None:
-        """Initialize class."""
-        self.n_arms = n_arms
-        self.n_features = n_features  # n_arms * user_dim
-        self.warmup = warmup
-        self.sigma = v ** 2  # v ** 2 ?
-        self.pi_min = pi_min
-        self.pi_max = pi_max
-        self.a_bar = 0
-        self.pi_t = pi_max
-        self.sample_batch_size = sample_batch_size
-
-        self.B_inv = [np.copy(np.matrix(np.identity(self.n_features))) for i in np.arange(self.n_arms)]
-        self.b = [np.copy(np.matrix(np.zeros(self.n_features)).T) for i in np.arange(self.n_arms)]
-        self.theta = [np.copy(np.zeros(self.n_features)) for i in np.arange(self.n_arms)]
-        self.theta_tilde = np.matrix(np.zeros(shape=(self.n_features, self.n_arms)))
-
-        self.data_size = 0
-        self.batch_size = batch_size
-        self._B_inv = [np.copy(np.matrix(np.identity(self.n_features))) for i in np.arange(self.n_arms)] * 1
-        self._b = [np.copy(np.matrix(np.zeros(self.n_features)).T) for i in np.arange(self.n_arms)]
-        self._theta = [np.copy(np.zeros(self.n_features)) for i in np.arange(self.n_arms)]
-
-        self.counts_warmup = np.zeros(n_arms, dtype=int)
-        self.counts = np.zeros(n_arms + 1, dtype=int)
-        self.rewards = 0.0
-
-    def select_arm(self, x: np.matrix) -> int:
-        """Select arms according to the policy for new data.
-
-        Parameters
-        ----------
-        x : array-like, shape = (n_features, )
-            A test sample.
-
-        Returns
-        -------
-        result: int
-            The selected arm.
-
-        """
-        if True in (self.counts_warmup < self.warmup):
-            self.a_bar = np.where(self.counts_warmup < self.warmup)[0][0]
-            self.counts_warmup[self.a_bar] += 1
-            result = self.a_bar + 1
-        else:
-            values = np.zeros(self.n_arms)
-
-            if self.data_size % self.sample_batch_size == 0:
-                self.theta_tilde = np.concatenate([np.matrix(np.random.multivariate_normal(mean=self.theta[i], cov=self.sigma * self.B_inv[i])).T
-                                                   for i in np.arange(self.n_arms)], axis=1)
-
-            values = self.theta_tilde.T @ x
-            self.a_bar = np.argmax(values)
-            mu_bar = self.theta_tilde[:, self.a_bar].T @ x
-            sigma_bar = self.sigma * (x.T @ self.B_inv[self.a_bar] @ x).A[0]
-            self.pi_t = 1.0 - np.clip(a=norm.cdf(x=0, loc=mu_bar, scale=sigma_bar), a_min=self.pi_min, a_max=self.pi_max)[0][0]
-
-            result = np.random.choice([0, self.a_bar + 1], p=[1 - self.pi_t, self.pi_t])
-        return result
-
-    def update(self, x: np.matrix, chosen_arm: int, reward: float) -> None:
-        """Update the reward and parameter information about earch arm.
-
-        Parameters
-        ----------
-        x : array-like, shape = (n_features, )
-            A test sample.
-
-        chosen_arm: int
-            The chosen arm.
-
-        reward: int, float
-            The observed reward value from the chosen arm.
-
-        """
-        self.data_size += 1
-        self.counts[chosen_arm] += 1
-        self.rewards += reward
-        _x = (1 - self.pi_t) * self.pi_t * x
-        self._B_inv[self.a_bar] -= self._B_inv[self.a_bar] @ _x @ _x.T @ self._B_inv[self.a_bar] / (1 + _x.T @ self._B_inv[self.a_bar] @ _x)
-        self._b[self.a_bar] += x * reward * (np.sign([chosen_arm]) - self.pi_t)
-        self._theta[self.a_bar] = (self._B_inv[self.a_bar] @ self._b[self.a_bar]).A.reshape(self.n_features)
-
-        if self.data_size % self.batch_size == 0:
-            self.B_inv = np.copy(self._B_inv)  # d * d
-            self.b = np.copy(self._b)  # d * 1
-            self.theta = np.copy(self._theta)
